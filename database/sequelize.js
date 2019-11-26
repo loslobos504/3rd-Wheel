@@ -24,6 +24,9 @@ const User = sequelize.define('user', {
   bio: Sequelize.STRING,
   latitude: Sequelize.FLOAT,
   longitude: Sequelize.FLOAT,
+  int1: Sequelize.STRING,
+  int2: Sequelize.STRING,
+  int3: Sequelize.STRING,
 
 }, {
   hooks: {
@@ -46,6 +49,10 @@ const Couple = sequelize.define('couple', {
   status: Sequelize.STRING,
 }, { sequelize, modelName: 'couple' });
 
+const Friends = sequelize.define('friends', {
+  status: Sequelize.STRING,
+}, { sequelize, modelName: 'friends' });
+
 const Category = sequelize.define('category', {
   name: Sequelize.STRING,
   alias: Sequelize.STRING,
@@ -56,6 +63,16 @@ const Spot = sequelize.define('spot', {
   weigth: Sequelize.INTEGER,
 }, { sequelize, modelName: 'spot' });
 
+const Messages = sequelize.define('messages', {
+  sentFrom: {
+    type: Sequelize.STRING,
+    unique: true,
+  },
+  userId: Sequelize.INTEGER,
+  message: Sequelize.INTEGER,
+  zone: Sequelize.INTEGER,
+}, { sequelize, modelName: 'messages' });
+
 Category.belongsTo(Category, { as: 'children', foreignKey: 'parentId', useJunctionTable: false });
 Date.belongsTo(Spot);
 Date.belongsTo(Couple);
@@ -63,6 +80,9 @@ UserInterest.belongsTo(Category);
 UserInterest.belongsTo(User);
 Couple.belongsTo(User, { as: 'user1' });
 Couple.belongsTo(User, { as: 'user2' });
+Friends.belongsTo(User, { as: 'user1' });
+Friends.belongsTo(User, { as: 'user2' });
+Messages.belongsTo(User);
 
 sequelize.sync({ force: false })
   .then(() => console.log('users table has been successfully created, if one doesn\'t exist'))
@@ -74,5 +94,7 @@ exports.User = User;
 exports.Date = Date;
 exports.UserInterest = UserInterest;
 exports.Couple = Couple;
+exports.Friends = Friends;
 exports.Category = Category;
 exports.Spot = Spot;
+exports.Messages = Messages;

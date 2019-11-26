@@ -7,13 +7,15 @@ const bodyParser = require('body-parser');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const passport = require('passport');
-const LocalStrategy = require('passport-local');
+const LocalStrategy = require('passport-local').Strategy;
 const {
-  User, Date, UserInterest, Couple, Category, Spot, Op,
+  User, Date, UserInterest, Couple, Friends, Category, Spot, Op, Messages,
 } = require('../database/models/index.js');
 const {
   fetchRestaurants, fetchSpot, selectMatch, sanitizeUser, paramSplitter,
 } = require('./helpers/index.js');
+const { restDecider } = require('../database/helpers/db-helpers');
+const messages = require('../test-data/messages');
 
 const app = express();
 const upload = multer();
@@ -106,7 +108,7 @@ app.get('/#/login', (req, res) => {
 
 //  All other get requests to pages should verify login first
 app.get('/#/*', loggedIn, (req, res) => {
-  res.redirect('/');
+  res.redirect('/hotspots');
 });
 
 /* AUTHENTICATION REQUESTS */
@@ -131,8 +133,10 @@ app.post('/login', (req, res, next) => {
 });
 
 app.get('/logout', loggedIn, (req, res) => {
-  req.logout();
-  res.redirect('/');
+  req.session.destroy(() => {
+    req.logout();
+    res.redirect('/');
+  });
 });
 
 /* DATA REQUESTS */
@@ -144,7 +148,6 @@ app.get('/logout', loggedIn, (req, res) => {
 app.post('/signup', async (req, res) => {
   try {
     const { username } = req.body;
-
     //  First see if a user already exists with that username
     const user = await User.findOne({
       where: {
@@ -179,6 +182,7 @@ app.patch('/signup', async (req, res) => {
   const {
     age, gender, preference, bio, interests: interestIds,
   } = req.body;
+
   //  Note that interests are split off to be used in a join table
   const options = {
     age, gender, preference, bio,
@@ -214,6 +218,7 @@ app.patch('/signup', async (req, res) => {
 
 //  this is to retrieve a specific user profile
 app.get('/users', loggedIn, async (req, res) => {
+
   try {
     const { userId: id } = req.session;
     const user = await User.findByPk(id);
@@ -225,11 +230,21 @@ app.get('/users', loggedIn, async (req, res) => {
   }
 });
 
+app.get('/customers', (req, res) => {
+  User.findAll()
+    .then((users) => {
+      res.send(users);
+    })
+    .catch((err) => {
+      console.log(err);
+    });
+});
+
 //  This is specifically built for editing location information
 app.patch('/users', loggedIn, async (req, res) => {
   try {
     const { userId } = req.session;
-    
+  
     const options = req.body;
     const user = await User.findByPk(userId);
     const updatedUser = await user.update(options);
@@ -267,20 +282,18 @@ app.patch('/users/pic/', upload.single('pic'), async (req, res) => {
 });
 
 //  This retrieves the top-level categories ie Restaurants
-app.get('/categories', (req, res) => {
-  return Category.findAll({
-    where: {
-      parentId: null,
-    },
+app.get('/categories', (req, res) => Category.findAll({
+  where: {
+    parentId: null,
+  },
+})
+  .then((categories) => {
+    res.status(200).send(categories);
   })
-    .then((categories) => {
-      res.status(200).send(categories);
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send(err);
-    });
-});
+  .catch((err) => {
+    console.error(err);
+    res.status(500).send(err);
+  }));
 
 //  This retrieves the subcategories aka interests
 //    If we are looking in Restaurants, this retrieves
@@ -300,6 +313,145 @@ app.get('/categories/:id', (req, res) => {
       res.status(500).send(err);
     });
 });
+
+// Posts couple IDs to couples table on accept from the matches route
+let currentUserID = 1;
+
+app.post('/couples', (req, res) => {
+  console.log('inside app post');
+  console.log('couples req.body:', req.body);
+  currentUserID = req.body.user1Id;
+  Couple.create(req.body);
+  res.status(201).send(req.body);
+});
+
+app.get('/couples', (req, res) => {
+  Couple.findAll({
+    where: {
+      user1id: currentUserID,
+    },
+  })
+    .then((couples) => {
+      console.log('couples from server get:', couples);
+      const matches = couples.map(match => match.user2Id);
+      console.log('matches:', matches);
+      const duplicateFreeMatches = [];
+      matches.forEach((match) => {
+        if (duplicateFreeMatches.indexOf(match) === -1) {
+          duplicateFreeMatches.push(match);
+        }
+      });
+      console.log('duplicate free matches:', duplicateFreeMatches);
+      // res.send(couples);
+      // return duplicateFreeMatches.forEach(matchID => User.findByPk(matchID));
+      if (duplicateFreeMatches.length === 0) { 
+        res.send(couples);
+        return;
+      }
+      return User.findAll({
+        where: {
+          id: {
+            [Op.or]: duplicateFreeMatches,
+          },
+        },
+      });
+    })
+    .then((people) => {
+      console.log('people from server', people);
+      res.send(people);
+    })
+    .catch((err) => {
+      console.log('couples get error:', err);
+      res.send(500);
+    });
+});
+
+app.delete('/couples', (req, res) => {
+  console.log('inside server delete couples');
+  console.log('req.body delete', req.body);
+  const { userId, dumpId } = req.body;
+  Couple.destroy({
+    where: {
+      user1Id: userId,
+      user2Id: dumpId,
+    },
+  })
+    .then((result) => {
+      console.log('server delete result:', result);
+      res.send(200);
+    })
+    .catch((err) => {
+      console.log('error from server delete couple:', err);
+    });
+});
+
+// Functionality for Friends routes to store, get, and delete friends of user
+
+app.post('/friends', (req, res) => {
+  console.log('inside app friends post');
+  console.log('friends req.body:', req.body);
+  currentUserID = req.body.user1Id;
+  Friends.create(req.body);
+  res.status(201).send(req.body);
+});
+
+app.get('/friends', (req, res) => {
+  Friends.findAll({
+    where: {
+      user1id: currentUserID,
+    },
+  })
+    .then((friends) => {
+      console.log('friends from server get:', friends);
+      const friendIds = friends.map(match => match.user2Id);
+      console.log('friendIds:', friendIds);
+      const duplicateFreeFriendIds = [];
+      friendIds.forEach((friendId) => {
+        if (duplicateFreeFriendIds.indexOf(friendId) === -1) {
+          duplicateFreeFriendIds.push(friendId);
+        }
+      });
+      console.log('duplicate free friends:', duplicateFreeFriendIds);
+      // res.send(couples);
+      // return duplicateFreeMatches.forEach(matchID => User.findByPk(matchID));
+      return User.findAll({
+        where: {
+          id: {
+            [Op.or]: duplicateFreeFriendIds,
+          },
+        },
+      });
+    })
+    .then((people) => {
+      console.log('people from server for friends', people);
+      res.send(people);
+    })
+    .catch((err) => {
+      console.log('friends get error:', err);
+      res.send(500);
+    });
+});
+
+app.delete('/friends', (req, res) => {
+  console.log('inside server delete friends');
+  console.log('req.body delete friends', req.body);
+  const { userId, ghostId } = req.body;
+  Friends.destroy({
+    where: {
+      user1Id: userId,
+      user2Id: ghostId,
+    },
+  })
+    .then((result) => {
+      console.log('server friend delete result:', result);
+      res.send(200);
+    })
+    .catch((err) => {
+      console.log('error from server delete friends:', err);
+    });
+
+});
+
 
 //  This finds a matching user and posts to Couple
 //  It finds matching interests within a certain radius
@@ -359,12 +511,10 @@ app.get('/matches/:bound', async (req, res) => {
           },
         },
       });
-      const parsedCouples = couples.map((couple) => {
-        return {
-          coupleId: couple.id,
-          partnerId: couple.user2Id,
-        };
-      });
+      const parsedCouples = couples.map(couple => ({
+        coupleId: couple.id,
+        partnerId: couple.user2Id,
+      }));
       res.status(200).json(parsedCouples);
     }
     if (bound === 'inbound') {
@@ -377,12 +527,10 @@ app.get('/matches/:bound', async (req, res) => {
           status,
         },
       });
-      const parsedCouples = couples.map((couple) => {
-        return {
-          coupleId: couple.id,
-          partnerId: couple.user1Id,
-        };
-      });
+      const parsedCouples = couples.map(couple => ({
+        coupleId: couple.id,
+        partnerId: couple.user1Id,
+      }));
       res.status(200).json(parsedCouples);
     }
   } catch (err) {
@@ -593,6 +741,89 @@ app.delete('/dates/:dateId', async (req, res) => {
   } catch (err) {
     console.error(`Failed to delete date: ${dateId}`);
     res.status(500).json(err);
+  }
+});
+
+// //////////////////////////////////////////////////////////////
+// franco
+app.get('/restDecider', async (req, res) => {
+  try {
+    const { userId } = req.session;
+    const { latitude, longitude } = await User.findByPk(userId);
+    const { restaurantFilter } = req.query;
+    const alias = restaurantFilter;
+    console.log(alias, typeof alias);
+    const data = await restDecider(alias, latitude, longitude);
+    console.log(data);
+    res.json(data);
+  } catch (err) {
+    console.log(`shame on you ${err}`);
+    res.json(err);
+  }
+});
+
+app.patch('/updateUser', async (req, res) => {
+  const {
+    age, bio, gender, int1, int2, int3, preference,
+  } = req.query;
+  const { userId } = req.session;
+  const options = {
+    age,
+    bio,
+    gender,
+    int1,
+    int2,
+    int3,
+    preference,
+  };
+  try {
+    const user = await User.findOne({
+      where: {
+        id: userId,
+      },
+    });
+    const updatedUser = await user.update(options, {
+      where: {
+        id: userId,
+      },
+    });
+    console.log(updatedUser);
+    res.send('User Updated');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err);
+  }
+});
+
+app.post('/sendMessage', async (req, res) => {
+  const { message, sentFrom, userId } = req.query;
+  console.log(message, sentFrom, userId);
+  try {
+    const savedMessage = await Messages.create({
+      sentFrom,
+      userId,
+      message,
+    });
+    res.send(savedMessage);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err);
+  }
+});
+
+app.get('/sendMessage', async (req, res) => {
+  const { userId } = req.query;
+ 
+  try {
+    const storedMessages = await Messages.findAll({
+      where: {
+        userId: 1,
+      },
+    });
+    res.send(storedMessages);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err);
   }
 });
 

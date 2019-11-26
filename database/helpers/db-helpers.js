@@ -6,6 +6,7 @@ const restCategories = () => {
     url: 'https://api.yelp.com/v3/categories',
     headers: { 'Authorization': `Bearer ${process.env.YELP_KEY}` },
   };
+
   return axios(options)
     .then((response) => {
       const { categories } = response.data;
@@ -79,9 +80,36 @@ const topInterest = (interests) => {
   return topMatch;
 };
 
+const restDecider = async (filter, latitude, longitude) => {
+  try {
+    const options = {
+      method: 'get',
+      url: 'https://api.yelp.com/v3/businesses/search',
+      headers: {
+        Authorization: `Bearer ${process.env.YELP_KEY}`,
+      },
+      params: {
+        limit: '5',
+        categories: filter,
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+      },
+    };
+    const response = await axios(options);
+    const { businesses } = response.data;
+    return businesses;
+  } catch (err) {
+    console.error(`Failed to fetch from Yelp: ${err}`);
+    return err;
+    // franco was here
+  }
+};
+
+
 module.exports = {
   restCategories,
   fetchRestaurant,
   haversineDistance,
   topInterest,
+  restDecider,
 };

@@ -9,10 +9,14 @@ import axios from 'axios';
 
 
 
-const Matches = ({ user }) => {
+const Matches = ({ user, customer, customers, datingPool, poolOption, skipMatch, acceptMatch, rejectMatch }) => {
+  console.log('datingpool', datingPool);
   // const [index, changeIndex] = useState(0);
   // const [coupleId, newCouple] = useState(null);
 
+ 
+ 
+  // console.log(customer.interest1);
   // function handleChange() {
   //   changeIndex(index++);
   //   setDirection(index++);
@@ -74,23 +78,33 @@ const Matches = ({ user }) => {
     })
   }
 
-  getNewMatch();
+  // getNewMatch();
 
   return (
+    
     <div>
-    <Carousel controls={false} /* activeIndex={index} */ dir="left">
+      <Carousel className="match-carousel col-12 col-md-4 mx-auto" controls={false} /* activeIndex={index} */ dir="left">
+      {datingPool.length > 0 ? 
         <CarouselItem>
           <Card>
-            <CardImg width="70%" height="60%" src={"https://previews.123rf.com/images/panyamail/panyamail1809/panyamail180900343/109879063-user-avatar-icon-sign-profile-symbol.jpg"} />
-            <Card.Title>{"Find a Match"}</Card.Title>
-            <Card.Text>Age: {"???"}</Card.Text>
-            <Card.Text>Interest: {"???"}</Card.Text>
+            <CardImg src={poolOption.pic} />
+            <Card.Title>{poolOption.username}</Card.Title>
+            <Card.Text>Age: {poolOption.age}</Card.Text>
+            <Card.Text>Bio: {poolOption.bio}</Card.Text>
           </Card>
         </CarouselItem>
+        :
+        <CarouselItem>
+          <Card>
+            <CardImg src="https://media.giphy.com/media/3o6gg3IDiuTKFgGzN6/giphy.gif"/>
+            <Card.Text>Sorry, there are no more perspective matches in your area at this time.</Card.Text>
+            </Card>
+        </CarouselItem>
+      }
     </Carousel>
-      <Button onClick={accept} variant="success" size="lg" block>Accept</Button>
-      <Button onClick={getNewMatch} variant="primary" size="lg" block>Skip</Button>
-      <Button onClick={reject} variant="danger" size="lg" block>Reject </Button>
+      <Button className="col-10 col-md-4 mx-auto" onClick={acceptMatch} variant="success" size="md" block>Accept</Button>
+      <Button className="col-10 col-md-4 mx-auto"  onClick={skipMatch} variant="primary" size="md" block>Skip</Button>
+      <Button className="col-10 col-md-4 mx-auto"  onClick={rejectMatch} variant="danger" size="md" block>Reject </Button>
     </div>
 
   );
